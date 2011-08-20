@@ -11,6 +11,14 @@ html, body {
 	right: 0;
 	top: 0;
 }
+	#wrapper h1 {
+		display: none;
+	}
+	#wrapper.no-file h1 {
+		font-size: 6em;
+		display: block;
+		text-align: center;
+	}
 	#wrapper #file-input {
 		background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.5));
 		height: 2em;
@@ -22,9 +30,9 @@ html, body {
 			color: #FFF;
 			width: 100%;
 		}
-	#wrapper #file-input.no-file {
-		background: rgba(255, 255, 255, 0.25);
-		border: 2px rgba(0, 0, 0, 0.25) solid;
+	#wrapper.no-file #file-input {
+		background: rgba(255, 255, 255, 0.5);
+		border: 2px rgba(0, 0, 0, 0.5) solid;
 		border-radius: 0.75em;
 		
 		position: fixed;
@@ -36,19 +44,23 @@ html, body {
 		
 		height: 48%;
 		width: 32%;
+		opacity: 0.5;
 	}
-		#wrapper #file-input.no-file form input[type="file"] {
+	#wrapper.no-file #file-input:hover {
+		opacity: 1;
+	}
+		#wrapper.no-file #file-input form input[type="file"] {
 			background-image: url("upload.png");
 			background-position: center;
 			background-repeat: no-repeat;
 			background-size: 90%;
 			color: rgba(0, 0, 0, 0);
-			height: 100%;
+			max-height: 100%;
 			padding-top: 100%;
 			text-align: center;
 			width: 100%;
 		}
-		#wrapper #file-input.file-loading form input[type="file"] {
+		#wrapper.no-file #file-input.file-loading form input[type="file"] {
 			background-image: url("loading.png");
 		}
 	
@@ -82,6 +94,7 @@ html, body {
 				}
 				#wrapper #file-browser #file-list-panel #file-list li.current-file {
 					font-weight: bold;
+					text-decoration: underline;
 				}
 		#wrapper #file-browser #file-preview-panel {
 			position: fixed;
@@ -94,6 +107,6 @@ html, body {
 				padding: 2em;
 			}
 		
-	#wrapper #file-browser.no-file {
+	#wrapper.no-file #file-browser {
 		display: none;
 	}
