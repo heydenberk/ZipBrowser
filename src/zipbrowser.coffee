@@ -8,9 +8,9 @@ $(->
 	fileList = $("#file-list")
 	filePreviewPanel = $("#file-preview-panel")
 	filePreview = $("#file-preview")
+	wrapper = $("#wrapper")
 	
 	previewFile = (file, listItem) ->
-		console.log listItem
 		fileList.children("li").removeClass("current-file")
 		listItem.addClass("current-file")
 		
@@ -19,29 +19,34 @@ $(->
 		else
 			filePreview.text(file.file)
 			
-	zipFileInput.change(-> zipForm.submit())
-	zipForm.bind("submit", (evt) ->
+	addFile =	(file) ->
+		if file.type isnt "folder"
+			fileList.append(
+				$("<li />",
+					click: -> previewFile(file, $(@))
+					text: file.filename
+				)
+			)
+			
+	showBrowser = ->
 		fileInput.addClass("file-loading")
 		filePreview.html("")
 		fileList.html("")
+		
+	loadZip = ->
 		reader = new FileReader()
-		iterator = (file) ->
-			if file.type isnt "folder"
-				$("#file-list").append(
-					$("<li />",
-						click: -> previewFile(file, $(@))
-						text: file.filename
-					)
-				)
-		evt.preventDefault()
-		evt.stopPropagation()
 		reader.onload = (evt) ->
 			fileBrowser.show()
-			fileInput.removeClass("no-file")
-			fileInput.removeClass("file-loading")
+			wrapper.removeClass("no-file")
 			arrayBuffer = evt.target.result
-			archive = new CoffeeZip(arrayBuffer, iterator)
+			archive = new CoffeeZip(arrayBuffer, addFile)
 			archive.extract()
+			fileList.children().first().click()
 		reader.readAsArrayBuffer(zipFileInput[0].files[0])
+		
+			
+	zipFileInput.change(->
+		showBrowser()
+		loadZip()
 	)
 )
