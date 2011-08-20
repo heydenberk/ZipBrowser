@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.1/jquery.min.js"></script>
+		<script type="text/javascript" src="http://crypto-js.googlecode.com/files/2.3.0-crypto-min.js"></script>
+		<link rel="stylesheet" href="base.css" />
+		<link rel="stylesheet" href="zipbrowser.css" />
+	<body>		
+		<div id="wrapper">
+			<div id="file-input" class="no-file">
+				<form name="reader">
+					<input type="file" />
+				</form>
+			</div>
+			<div id="file-browser" class="no-file">
+				<div id="file-list-panel">
+				<h2>Files</h2>
+				<ul id="file-list"></ul>
+				<div id="file-preview-panel">
+					<h2>Preview</h2>
+					<div id="file-preview"></div>
+				</div>
+			</div>
+		</div>
+		<script type="text/javascript" src="coffeezip.js"></script>
+		<script type="text/javascript" src="zipbrowser.js"></script>
+	</body>
+</html>

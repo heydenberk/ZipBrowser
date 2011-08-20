@@ -1,0 +1,99 @@
+html, body {
+	background: #FEFBF2;
+	font-size: 16px;
+	overflow: hidden;
+}
+
+#wrapper {
+	bottom: 0;
+	position: fixed;
+	left: 0;
+	right: 0;
+	top: 0;
+}
+	#wrapper #file-input {
+		background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.5));
+		height: 2em;
+		padding-left: 1em;
+		padding-top: 0.75em;
+		width: 100%;
+	}
+		#wrapper #file-input form input[type="file"] {
+			color: #FFF;
+			width: 100%;
+		}
+	#wrapper #file-input.no-file {
+		background: rgba(255, 255, 255, 0.25);
+		border: 2px rgba(0, 0, 0, 0.25) solid;
+		border-radius: 0.75em;
+		
+		position: fixed;
+		
+		bottom: 26%;
+		left: 34%;
+		right: 34%;
+		top: 26%;
+		
+		height: 48%;
+		width: 32%;
+	}
+		#wrapper #file-input.no-file form input[type="file"] {
+			background-image: url("upload.png");
+			background-position: center;
+			background-repeat: no-repeat;
+			background-size: 90%;
+			color: rgba(0, 0, 0, 0);
+			height: 100%;
+			padding-top: 100%;
+			text-align: center;
+			width: 100%;
+		}
+		#wrapper #file-input.file-loading form input[type="file"] {
+			background-image: url("loading.png");
+		}
+	
+	#wrapper #file-browser {
+		position: fixed;
+		top: 2em;
+		left: 0;
+		right: 0;
+		bottom: 0;
+	}
+		#wrapper #file-browser h2 {
+			background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.5));
+			color: #FFF;
+			line-height: 2em;
+			padding-left: 1em;
+		}
+		#wrapper #file-browser #file-list-panel {
+			position: fixed;
+			top: 2em;
+			left: 0;
+			bottom: 0;
+			overflow-y: scroll;
+			width: 20em;
+		}
+			#wrapper #file-browser #file-list-panel #file-list {
+				border-right: 1px #000 solid;
+				list-style: none;
+			}
+				#wrapper #file-browser #file-list-panel #file-list li {
+					margin-bottom: 0.5em;
+				}
+				#wrapper #file-browser #file-list-panel #file-list li.current-file {
+					font-weight: bold;
+				}
+		#wrapper #file-browser #file-preview-panel {
+			position: fixed;
+			left: 20em;
+			top: 2em;
+			right: 0;
+		}
+			#wrapper #file-browser #file-preview-panel #file-preview {
+				overflow-y: scroll;
+				padding: 2em;
+			}
+		
+	#wrapper #file-browser.no-file {
+		display: none;
+	}
