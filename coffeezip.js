@@ -1,5 +1,5 @@
 (function() {
-  var CSInflate, ZipError, ZipFileMember, zipHuftBuild, zipHuftList, zipHuftNode;
+  var CSInflate, HuftBuild, HuftList, HuftNode, ZipError, ZipFileMember;
   var __indexOf = Array.prototype.indexOf || function(item) {
     for (var i = 0, l = this.length; i < l; i++) {
       if (this[i] === item) return i;
@@ -49,9 +49,6 @@
       }
       return this.readFile();
     };
-    CoffeeZip.prototype.zipError = function(error) {
-      throw new Error("ZipError: " + error);
-    };
     CoffeeZip.prototype.extract = function() {
       this.readFile();
       if (!this.iterator) {
@@ -60,85 +57,207 @@
     };
     return CoffeeZip;
   })();
+  ZipError = (function() {
+    function ZipError(error) {
+      throw new Error(error);
+    }
+    return ZipError;
+  })();
+  ZipFileMember = (function() {
+    var type;
+    function ZipFileMember(zip, start) {
+      this.zip = zip;
+      this.start = start;
+    }
+    ZipFileMember.prototype.bytesAsNumber = function(bytes) {
+      var byte, number, _i, _len, _ref;
+      number = 0;
+      _ref = Array.prototype.slice.call(bytes).reverse();
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        byte = _ref[_i];
+        number = (number << 8) + (byte < 0 ? byte + 256 : byte);
+      }
+      return number;
+    };
+    ZipFileMember.prototype.bytesAsUTF8String = function(bytes) {
+      var byte;
+      return decodeURIComponent(((function() {
+        var _i, _len, _results;
+        _results = [];
+        for (_i = 0, _len = bytes.length; _i < _len; _i++) {
+          byte = bytes[_i];
+          _results.push("%" + (byte.toString(16)));
+        }
+        return _results;
+      })()).join(""));
+    };
+    ZipFileMember.prototype.bytesAsString = function(bytes) {
+      var byte;
+      return ((function() {
+        var _i, _len, _results;
+        _results = [];
+        for (_i = 0, _len = bytes.length; _i < _len; _i++) {
+          byte = bytes[_i];
+          _results.push(String.fromCharCode(byte));
+        }
+        return _results;
+      })()).join("");
+    };
+    ZipFileMember.prototype.file = "";
+    ZipFileMember.prototype.inflatedBytes = function(bytes) {
+      return new CSInflate(bytes, true).inflate();
+    };
+    ZipFileMember.prototype.inflatedBytesAsString = function(bytes) {
+      return new CSInflate(bytes).inflate();
+    };
+    ZipFileMember.prototype.process = function() {
+      var extraFieldStart, fileNameStart, key, value, _ref;
+      _ref = this.header;
+      for (key in _ref) {
+        value = _ref[key];
+        this[key] = this.bytesAsNumber(value);
+      }
+      delete this.header;
+      this.isEncrypted = (this.bitFlag & 0x01) === 0x01;
+      this.isUTF8 = (this.bitFlag & 0x0800) === 0x0800;
+      this.usesTrailingDescriptor = (this.bitFlag & 0x0008) === 0x0008;
+      this.filename = this.bytesAsString(new Uint8Array(this.zip.arrayBuffer, (fileNameStart = this.start + 26), this.fileNameLength));
+      this.extraField = this.bytesAsString(new Uint8Array(this.zip.arrayBuffer, (extraFieldStart = fileNameStart + this.fileNameLength), this.extraFieldLength));
+      this.fileStart = extraFieldStart + this.extraFieldLength;
+      return this.readFile();
+    };
+    ZipFileMember.prototype.readFile = function() {
+      var bytes, extension, filenameParts;
+      if (this.usesTrailingDescriptor) {
+        this.findCompressedSize();
+      }
+      bytes = new Uint8Array(this.zip.arrayBuffer, this.fileStart, this.compressedSize);
+      extension = (filenameParts = this.filename.split("."))[filenameParts.length - 1];
+      if (__indexOf.call(this.zip.constants.binaryFileExtensions, extension) >= 0) {
+        this.file = this.inflatedBytes(bytes);
+        this.type = "binary";
+      } else {
+        if (this.compressedSize > 0) {
+          this.file = (this.uncompressedSize === this.compressedSize ? this.bytesAsString : this.inflatedBytesAsString)(bytes);
+        } else {
+          this.type = "folder";
+        }
+      }
+      return this.end = this.fileStart + this.compressedSize;
+    };
+    ZipFileMember.prototype.readHeader = function() {
+      return this.header = {
+        minimumVersion: new Uint8Array(this.zip.arrayBuffer, this.start, 2),
+        bitFlag: new Uint8Array(this.zip.arrayBuffer, this.start + 2, 2),
+        compressionMethod: new Uint8Array(this.zip.arrayBuffer, this.start + 4, 2),
+        modificationTime: new Uint8Array(this.zip.arrayBuffer, this.start + 6, 2),
+        modificationDate: new Uint8Array(this.zip.arrayBuffer, this.start + 8, 2),
+        crc32: new Uint8Array(this.zip.arrayBuffer, this.start + 10, 2),
+        compressedSize: new Uint8Array(this.zip.arrayBuffer, this.start + 14, 4),
+        uncompressedSize: new Uint8Array(this.zip.arrayBuffer, this.start + 18, 4),
+        fileNameLength: new Uint8Array(this.zip.arrayBuffer, this.start + 22, 2),
+        extraFieldLength: new Uint8Array(this.zip.arrayBuffer, this.start + 24, 2)
+      };
+    };
+    ZipFileMember.prototype.findCompressedSize = function() {
+      var byte, position, possibleEOFBytes, _results;
+      position = this.fileStart;
+      _results = [];
+      while (true) {
+        try {
+          byte = new Uint8Array(this.zip.arrayBuffer, position, 1)[0];
+        } catch (e) {
+          break;
+        }
+        if (byte === 80) {
+          possibleEOFBytes = new Uint8Array(this.zip.arrayBuffer, position, 4);
+          if (this.bytesAsString(possibleEOFBytes) === this.zip.constants.trailingEOFSignature) {
+            this.compressedSize = position - this.fileStart;
+            break;
+          }
+          position += 1;
+        }
+      }
+      return _results;
+    };
+    ZipFileMember.prototype.read = function() {
+      this.readHeader();
+      return this.process();
+    };
+    type = "text";
+    return ZipFileMember;
+  })();
   CSInflate = (function() {
-    CSInflate.prototype.zipWSIZE = 32768;
-    CSInflate.prototype.zipSTOREDBLOCK = 0;
-    CSInflate.prototype.zipSTATICTREES = 1;
-    CSInflate.prototype.zipDYNTREES = 2;
-    CSInflate.prototype.zipLbits = 9;
-    CSInflate.prototype.zipDbits = 6;
-    CSInflate.prototype.zipINBUFEXTRA = 64;
-    CSInflate.prototype.zipFixedTl = null;
-    CSInflate.prototype.zipMaskBits = [0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767, 65535];
-    CSInflate.prototype.zipCplens = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0];
-    CSInflate.prototype.zipCplext = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 99, 99];
-    CSInflate.prototype.zipCpdist = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
-    CSInflate.prototype.zipCpdext = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
-    CSInflate.prototype.zipBorder = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
-    CSInflate.prototype.zipSlide = new Array(65536);
-    CSInflate.prototype.zipWp = 0;
-    CSInflate.prototype.zipBitBuf = 0;
-    CSInflate.prototype.zipBitLen = 0;
-    CSInflate.prototype.zipMethod = -1;
-    CSInflate.prototype.zipEof = false;
-    CSInflate.prototype.zipCopyLeng = 0;
-    CSInflate.prototype.zipCopyDist = 0;
-    CSInflate.prototype.zipTl = null;
+    CSInflate.prototype.constants = {
+      border: [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15],
+      bufferLength: Math.pow(2, 10),
+      distanceLookupBits: 6,
+      literalLookupBits: 9,
+      methods: {
+        0: "storedBlock",
+        1: "staticTrees",
+        2: "dynamicTrees"
+      },
+      windowSize: Math.pow(2, 15)
+    };
+    CSInflate.prototype.bitBuffer = 0;
+    CSInflate.prototype.bitLength = 0;
+    CSInflate.prototype.buffer = [];
+    CSInflate.prototype.copyDistance = 0;
+    CSInflate.prototype.copyLength = 0;
+    CSInflate.prototype.endOfFile = false;
+    CSInflate.prototype.fixedLengthTable = null;
+    CSInflate.prototype.inflatePosition = 0;
+    CSInflate.prototype.lengthTable = null;
+    CSInflate.prototype.method = -1;
+    CSInflate.prototype.slide = [];
+    CSInflate.prototype.slidePosition = 0;
     function CSInflate(data, binary) {
       this.data = data;
       this.binary = binary != null ? binary : false;
     }
     CSInflate.prototype.inflate = function() {
-      var i, j, out, outVal;
-      this.inflateStart();
-      this.inflatePos = 0;
-      this.buffer = new Array(1024);
-      out = [];
-      while ((i = this.zipInflateInternal()) > 0) {
-        outVal = "";
+      var i, inflated, j;
+      inflated = this.binary ? [] : "";
+      while ((i = this.inflateInternal()) > 0) {
         for (j = 0; (0 <= i ? j < i : j > i); (0 <= i ? j += 1 : j -= 1)) {
           if (this.binary) {
-            out.push(this.buffer[j]);
+            inflated.push(this.buffer[j]);
           } else {
-            out.push(String.fromCharCode(this.buffer[j]));
+            inflated += String.fromCharCode(this.buffer[j]);
           }
         }
       }
-      delete this.data;
-      if (this.binary) {
-        return out;
-      } else {
-        return out.join("");
-      }
+      return inflated;
     };
     /*
     		inflate (decompress) the codes in a deflated (compressed) block.
     		Return an error code or zero if it all goes ok.
     	*/
-    CSInflate.prototype.zipInflateCodes = function(offset, size) {
+    CSInflate.prototype.inflateCodes = function(offset, size) {
       var e, n, t;
       if (size === 0) {
         return 0;
       }
       n = 0;
       while (true) {
-        this.zipNeedBits(this.zipBl);
-        t = this.zipTl.list[this.zipGetBits(this.zipBl)];
+        this.needBits(this.literalBits);
+        t = this.lengthTable.list[this.getBits(this.literalBits)];
         e = t.e;
         while (e > 16) {
           if (e === 99) {
             return -1;
           }
-          this.zipDumpBits(t.b);
+          this.dumpBits(t.b);
           e -= 16;
-          this.zipNeedBits(e);
-          t = t.t[this.zipGetBits(e)];
+          this.needBits(e);
+          t = t.t[this.getBits(e)];
           e = t.e;
         }
-        this.zipDumpBits(t.b);
+        this.dumpBits(t.b);
         if (e === 16) {
-          this.zipWp &= this.zipWSIZE - 1;
-          this.buffer[offset + n++] = this.zipSlide[this.zipWp++] = t.n;
+          this.slidePosition &= this.constants.windowSize - 1;
+          this.buffer[offset + n++] = this.slide[this.slidePosition++] = t.n;
           if (n === size) {
             return size;
           }
@@ -147,40 +266,40 @@
         if (e === 15) {
           break;
         }
-        this.zipNeedBits(e);
-        this.zipCopyLeng = t.n + this.zipGetBits(e);
-        this.zipDumpBits(e);
-        this.zipNeedBits(this.zipBd);
-        t = this.zipTd.list[this.zipGetBits(this.zipBd)];
+        this.needBits(e);
+        this.copyLength = t.n + this.getBits(e);
+        this.dumpBits(e);
+        this.needBits(this.distanceBits);
+        t = this.distanceTable.list[this.getBits(this.distanceBits)];
         e = t.e;
         while (e > 16) {
           if (e === 99) {
             return -1;
           }
-          this.zipDumpBits(t.b);
+          this.dumpBits(t.b);
           e -= 16;
-          this.zipNeedBits(e);
-          t = t.t[this.zipGetBits(e)];
+          this.needBits(e);
+          t = t.t[this.getBits(e)];
           e = t.e;
         }
-        this.zipDumpBits(t.b);
-        this.zipNeedBits(e);
-        this.zipCopyDist = this.zipWp - t.n - this.zipGetBits(e);
-        this.zipDumpBits(e);
-        while (this.zipCopyLeng > 0 && n < size) {
-          this.zipCopyLeng--;
-          this.zipCopyDist &= this.zipWSIZE - 1;
-          this.zipWp &= this.zipWSIZE - 1;
-          this.buffer[offset + n++] = this.zipSlide[this.zipWp++] = this.zipSlide[this.zipCopyDist++];
+        this.dumpBits(t.b);
+        this.needBits(e);
+        this.copyDistance = this.slidePosition - t.n - this.getBits(e);
+        this.dumpBits(e);
+        while (this.copyLength > 0 && n < size) {
+          this.copyLength--;
+          this.copyDistance &= this.constants.windowSize - 1;
+          this.slidePosition &= this.constants.windowSize - 1;
+          this.buffer[offset + n++] = this.slide[this.slidePosition++] = this.slide[this.copyDistance++];
         }
         if (n === size) {
           return size;
         }
       }
-      this.zipMethod = -1;
+      this.method = -1;
       return n;
     };
-    CSInflate.prototype.zipInflateDynamic = function(offset, size) {
+    CSInflate.prototype.inflateDynamic = function(offset, size) {
       var bitLengthCodes, distanceCodes, h, i, j, l, literalLengthCodes, literalLengths, n, t;
       literalLengths = (function() {
         var _results;
@@ -190,47 +309,47 @@
         }
         return _results;
       })();
-      this.zipNeedBits(5);
-      literalLengthCodes = 257 + this.zipGetBits(5);
-      this.zipDumpBits(5);
-      this.zipNeedBits(5);
-      distanceCodes = 1 + this.zipGetBits(5);
-      this.zipDumpBits(5);
-      this.zipNeedBits(4);
-      bitLengthCodes = 4 + this.zipGetBits(4);
-      this.zipDumpBits(4);
+      this.needBits(5);
+      literalLengthCodes = 257 + this.getBits(5);
+      this.dumpBits(5);
+      this.needBits(5);
+      distanceCodes = 1 + this.getBits(5);
+      this.dumpBits(5);
+      this.needBits(4);
+      bitLengthCodes = 4 + this.getBits(4);
+      this.dumpBits(4);
       if (literalLengthCodes > 286 || distanceCodes > 30) {
         return -1;
       }
       for (j = 0; (0 <= bitLengthCodes ? j < bitLengthCodes : j > bitLengthCodes); (0 <= bitLengthCodes ? j += 1 : j -= 1)) {
-        this.zipNeedBits(3);
-        literalLengths[this.zipBorder[j]] = this.zipGetBits(3);
-        this.zipDumpBits(3);
+        this.needBits(3);
+        literalLengths[this.constants.border[j]] = this.getBits(3);
+        this.dumpBits(3);
       }
       for (j = j; (j <= 19 ? j < 19 : j > 19); (j <= 19 ? j += 1 : j -= 1)) {
-        literalLengths[this.zipBorder[j]] = 0;
+        literalLengths[this.constants.border[j]] = 0;
       }
-      this.zipBl = 7;
-      h = new zipHuftBuild(literalLengths, 19, 19, null, null, this.zipBl);
+      this.literalBits = 7;
+      h = new HuftBuild(literalLengths, 19, 19, null, this.literalBits);
       if (h.status !== 0) {
         return -1;
       }
-      this.zipTl = h.root;
-      this.zipBl = h.m;
+      this.lengthTable = h.root;
+      this.literalBits = h.m;
       n = literalLengthCodes + distanceCodes;
       i = l = 0;
       while (i < n) {
-        this.zipNeedBits(this.zipBl);
-        t = this.zipTl.list[this.zipGetBits(this.zipBl)];
+        this.needBits(this.literalBits);
+        t = this.lengthTable.list[this.getBits(this.literalBits)];
         j = t.b;
-        this.zipDumpBits(j);
+        this.dumpBits(j);
         j = t.n;
         if (j < 16) {
           literalLengths[i++] = l = j;
         } else if (j === 16) {
-          this.zipNeedBits(2);
-          j = 3 + this.zipGetBits(2);
-          this.zipDumpBits(2);
+          this.needBits(2);
+          j = 3 + this.getBits(2);
+          this.dumpBits(2);
           if (i + j > n) {
             return -1;
           }
@@ -238,9 +357,9 @@
             literalLengths[i++] = l;
           }
         } else if (j === 17) {
-          this.zipNeedBits(3);
-          j = 3 + this.zipGetBits(3);
-          this.zipDumpBits(3);
+          this.needBits(3);
+          j = 3 + this.getBits(3);
+          this.dumpBits(3);
           if (i + j > n) {
             return -1;
           }
@@ -249,9 +368,9 @@
           }
           l = 0;
         } else {
-          this.zipNeedBits(7);
-          j = 11 + this.zipGetBits(7);
-          this.zipDumpBits(7);
+          this.needBits(7);
+          j = 11 + this.getBits(7);
+          this.dumpBits(7);
           if (i + j > n) {
             return -1;
           }
@@ -261,9 +380,9 @@
           l = 0;
         }
       }
-      this.zipBl = this.zipLbits;
-      h = new zipHuftBuild(literalLengths, literalLengthCodes, 257, this.zipCplens, this.zipCplext, this.zipBl);
-      if (this.zipBl === 0) {
+      this.literalBits = this.constants.literalLookupBits;
+      h = new HuftBuild(literalLengths, literalLengthCodes, 257, "literal", this.literalBits);
+      if (this.literalBits === 0) {
         h.status = 1;
       }
       if (h.status !== 0) {
@@ -271,16 +390,16 @@
           return -1;
         }
       }
-      this.zipTl = h.root;
-      this.zipBl = h.m;
+      this.lengthTable = h.root;
+      this.literalBits = h.m;
       for (i = 0; (0 <= distanceCodes ? i < distanceCodes : i > distanceCodes); (0 <= distanceCodes ? i += 1 : i -= 1)) {
         literalLengths[i] = literalLengths[i + literalLengthCodes];
       }
-      this.zipBd = this.zipDbits;
-      h = new zipHuftBuild(literalLengths, distanceCodes, 0, this.zipCpdist, this.zipCpdext, this.zipBd);
-      this.zipTd = h.root;
-      this.zipBd = h.m;
-      if (this.zipBd === 0 && literalLengthCodes > 257) {
+      this.distanceBits = this.constants.distanceLookupBits;
+      h = new HuftBuild(literalLengths, distanceCodes, 0, "distance", this.distanceBits);
+      this.distanceTable = h.root;
+      this.distanceBits = h.m;
+      if (this.distanceBits === 0 && literalLengthCodes > 257) {
         return -1;
       }
       if (h.status === 1) {
@@ -289,25 +408,25 @@
       if (h.status !== 0) {
         return -1;
       }
-      return this.zipInflateCodes(offset, size);
+      return this.inflateCodes(offset, size);
     };
     /*
     		Decompress an inflated type 1 (fixed Huffman codes) block.  We should
     		either replace this with a custom decoder, or at least precompute the
     		Huffman tables.
     	*/
-    CSInflate.prototype.zipInflateFixed = function(offset, size) {
+    CSInflate.prototype.inflateFixed = function(offset, size) {
       var h, l, n, _ref;
-      if (this.zipFixedTl === null) {
+      if (this.fixedLengthTable === null) {
         l = [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8];
-        this.zipFixedBl = 7;
-        h = new zipHuftBuild(l, 288, 257, this.zipCplens, this.zipCplext, this.zipFixedBl);
+        this.fixedLiteralBits = 7;
+        h = new HuftBuild(l, 288, 257, "literal", this.fixedLiteralBits);
         if (h.status !== 0) {
           console.error("HufBuild error: " + h.status);
           return -1;
         }
-        this.zipFixedTl = h.root;
-        this.zipFixedBl = h.m;
+        this.fixedLengthTable = h.root;
+        this.fixedLiteralBits = h.m;
         [].splice.apply(l, [0, 30].concat(_ref = (function() {
           var _results;
           _results = [];
@@ -316,87 +435,88 @@
           }
           return _results;
         })())), _ref;
-        this.zipFixedBd = 5;
-        h = new zipHuftBuild(l, 30, 0, this.zipCpdist, this.zipCpdext, this.zipFixedBd);
+        this.fixedDistanceBits = 5;
+        h = new HuftBuild(l, 30, 0, "distance", this.fixedDistanceBits);
         if (h.status > 1) {
-          this.zipFixedTl = null;
+          this.fixedLengthTable = null;
           console.error("HufBuild error: " + h.status);
           return -1;
         }
-        this.zipFixedTd = h.root;
-        this.zipFixedBd = h.m;
-        this.zipTl = this.zipFixedTl;
-        this.zipTd = this.zipFixedTd;
-        this.zipBl = this.zipFixedBl;
-        this.zipBd = this.zipFixedBd;
-        return this.zipInflateCodes(offset, size);
+        this.fixedDistanceTable = h.root;
+        this.fixedDistanceBits = h.m;
+        this.lengthTable = this.fixedLengthTable;
+        this.distanceTable = this.fixedDistanceTable;
+        this.literalBits = this.fixedLiteralBits;
+        this.distanceBits = this.fixedDistanceBits;
+        return this.inflateCodes(offset, size);
       }
     };
-    CSInflate.prototype.zipInflateInternal = function() {
+    CSInflate.prototype.inflateInternal = function() {
       var i, n, offset, size;
       offset = 0;
-      size = this.buffer.length;
+      size = this.constants.bufferLength;
       n = 0;
       while (n < size) {
-        if (this.zipEof && this.zipMethod === -1) {
+        if (this.endOfFile && this.method === -1) {
+          console.log(n, size);
           return n;
         }
-        if (this.zipCopyLeng > 0) {
-          if (this.zipMethod !== this.zipSTOREDBLOCK) {
-            while (this.zipCopyLeng > 0 && n < size) {
-              this.zipCopyLeng--;
-              this.zipCopyDist &= this.zipWSIZE - 1;
-              this.zipWp &= this.zipWSIZE - 1;
-              this.buffer[offset + n++] = this.zipSlide[this.zipWp++] = this.zipSlide[this.zipCopyDist++];
+        if (this.copyLength > 0) {
+          if (this.constants.methods[this.method] !== "storedBlock") {
+            while (this.copyLength > 0 && n < size) {
+              this.copyLength--;
+              this.copyDistance &= this.constants.windowSize - 1;
+              this.slidePosition &= this.constants.windowSize - 1;
+              this.buffer[offset + n++] = this.slide[this.slidePosition++] = this.slide[this.copyDistance++];
             }
           } else {
-            while (this.zipCopyLeng > 0 && n < size) {
-              this.zipCopyLeng--;
-              this.zipWp &= this.zipWSIZE - 1;
-              this.zipNeedBits(8);
-              this.buffer[offset + n++] = this.zipSlide[this.zipWp++] = this.zipGetBits(8);
-              this.zipDumpBits(8);
+            while (this.copyLength > 0 && n < size) {
+              this.copyLength--;
+              this.slidePosition &= this.constants.windowSize - 1;
+              this.needBits(8);
+              this.buffer[offset + n++] = this.slide[this.slidePosition++] = this.getBits(8);
+              this.dumpBits(8);
             }
-            if (this.zipCopyLeng === 0) {
-              this.zipMethod = -1;
+            if (this.copyLength === 0) {
+              this.method = -1;
             }
           }
           if (n === size) {
             return n;
           }
         }
-        if (this.zipMethod === -1) {
-          if (this.zipEof) {
+        if (this.method === -1) {
+          if (this.endOfFile) {
             break;
           }
-          this.zipNeedBits(1);
-          if (this.zipGetBits(1) !== 0) {
-            this.zipEof = true;
+          this.needBits(1);
+          if (this.getBits(1) !== 0) {
+            this.endOfFile = true;
           }
-          this.zipDumpBits(1);
-          this.zipNeedBits(2);
-          this.zipMethod = this.zipGetBits(2);
-          this.zipDumpBits(2);
-          this.zipTl = null;
-          this.zipCopyLeng = 0;
+          this.dumpBits(1);
+          this.needBits(2);
+          this.method = this.getBits(2);
+          this.dumpBits(2);
+          this.lengthTable = null;
+          this.copyLength = 0;
         }
         offset += n;
         size -= n;
-        switch (this.zipMethod) {
-          case this.zipSTOREDBLOCK:
-            i = this.zipInflateStored(offset, size);
+        switch (this.constants.methods[this.method]) {
+          case "storedBlock":
+            i = this.inflateStored(offset, size);
             break;
-          case this.zipSTATICTREES:
-            i = this.zipTl !== null ? this.zipInflateCodes(offset, size) : this.zipInflateFixed(offset, size);
+          case "staticTrees":
+            i = this.lengthTable !== null ? this.inflateCodes(offset, size) : this.inflateFixed(offset, size);
             break;
-          case this.zipDYNTREES:
-            i = this.zipTl !== null ? this.zipInflateCodes(offset, size) : this.zipInflateDynamic(offset, size);
+          case "dynamicTrees":
+            i = this.lengthTable !== null ? this.inflateCodes(offset, size) : this.inflateDynamic(offset, size);
             break;
           default:
             i = -1;
         }
         if (i === -1) {
-          if (this.zipEof) {
+          if (this.endOfFile) {
             return 0;
           }
           return -1;
@@ -405,81 +525,70 @@
       }
       return n;
     };
-    CSInflate.prototype.zipInflateStored = function(offset, size) {
+    CSInflate.prototype.inflateStored = function(offset, size) {
       var n;
-      n = this.zipBitLen & 7;
-      this.zipDumpBits(n);
-      this.zipNeedBits(16);
-      n = this.zipGetBits(16);
-      this.zipDumpBits(16);
-      this.zipNeedBits(16);
-      if (n !== ((~this.zipBitBuf) & 0xffff)) {
+      n = this.bitLength & 7;
+      this.dumpBits(n);
+      this.needBits(16);
+      n = this.getBits(16);
+      this.dumpBits(16);
+      this.needBits(16);
+      if (n !== ((~this.bitBuffer) & 0xffff)) {
         return -1;
       }
-      this.zipDumpBits(16);
-      this.zipCopyLeng = n;
+      this.dumpBits(16);
+      this.copyLength = n;
       n = 0;
-      while (this.zipCopyLeng > 0 && n < size) {
-        this.zipCopyLeng--;
-        this.zipWp &= this.zipWSIZE - 1;
-        this.zipNeedBits(8);
-        this.buffer[offset + n++] = this.zipSlide[this.zipWp++] = this.zipGetBits(8);
-        this.zipDumpBits(8);
+      while (this.copyLength > 0 && n < size) {
+        this.copyLength--;
+        this.slidePosition &= this.constants.windowSize - 1;
+        this.needBits(8);
+        this.buffer[offset + n++] = this.slide[this.slidePosition++] = this.getBits(8);
+        this.dumpBits(8);
       }
-      if (this.zipCopyLeng === 0) {
-        this.zipMethod = -1;
+      if (this.copyLength === 0) {
+        this.method = -1;
       }
       return n;
     };
-    CSInflate.prototype.zipGetByte = function() {
-      if (this.data.length === this.inflatePos) {
+    CSInflate.prototype.getByte = function() {
+      if (this.data.length === this.inflatePosition) {
         return -1;
       } else {
-        return this.data[this.inflatePos++] & 0xff;
+        return this.data[this.inflatePosition++] & 0xff;
       }
     };
-    CSInflate.prototype.zipNeedBits = function(n) {
+    CSInflate.prototype.needBits = function(n) {
       var _results;
       _results = [];
-      while (this.zipBitLen < n) {
-        this.zipBitBuf |= this.zipGetByte() << this.zipBitLen;
-        _results.push(this.zipBitLen += 8);
+      while (this.bitLength < n) {
+        this.bitBuffer |= this.getByte() << this.bitLength;
+        _results.push(this.bitLength += 8);
       }
       return _results;
     };
-    CSInflate.prototype.zipGetBits = function(n) {
-      return this.zipBitBuf & this.zipMaskBits[n];
+    CSInflate.prototype.getBits = function(n) {
+      return this.bitBuffer & (Math.pow(2, n) - 1);
     };
-    CSInflate.prototype.zipDumpBits = function(n) {
-      this.zipBitBuf >>= n;
-      return this.zipBitLen -= n;
-    };
-    CSInflate.prototype.inflateStart = function() {
-      var _ref;
-      (_ref = this.zipSlide) != null ? _ref : this.zipSlide = new Array(2 * this.zipWSIZE);
-      this.zipWp = 0;
-      this.zipBitBuf = 0;
-      this.zipBitLen = 0;
-      this.zipMethod = -1;
-      this.zipEof = false;
-      this.zipCopyLeng = this.zipCopyDist = 0;
-      return this.zipTl = null;
+    CSInflate.prototype.dumpBits = function(n) {
+      this.bitBuffer >>= n;
+      return this.bitLength -= n;
     };
     return CSInflate;
   })();
-  zipHuftList = (function() {
-    function zipHuftList() {}
-    zipHuftList.prototype.list = null;
-    zipHuftList.prototype.next = null;
-    return zipHuftList;
+  HuftList = (function() {
+    function HuftList() {}
+    HuftList.prototype.list = null;
+    HuftList.prototype.next = null;
+    return HuftList;
   })();
-  zipHuftNode = (function() {
-    function zipHuftNode() {}
-    zipHuftNode.prototype.e = 0;
-    zipHuftNode.prototype.b = 0;
-    zipHuftNode.prototype.n = 0;
-    zipHuftNode.prototype.t = null;
-    return zipHuftNode;
+  HuftNode = (function() {
+    function HuftNode() {}
+    HuftNode.prototype.e = 0;
+    HuftNode.prototype.b = 0;
+    HuftNode.prototype.n = 0;
+    HuftNode.prototype.t = null;
+    return HuftNode;
   })();
   /*
   	Given a list of code lengths and a maximum table size, make a set of
@@ -491,25 +600,39 @@
   	so that no bits beyond that code are fetched when that code is
   	decoded.
   */
-  zipHuftBuild = (function() {
-    zipHuftBuild.prototype.BMAX = 16;
-    zipHuftBuild.prototype.m = 0;
-    zipHuftBuild.prototype.N_MAX = 288;
-    zipHuftBuild.prototype.root = null;
-    zipHuftBuild.prototype.status = 0;
-    zipHuftBuild.prototype.tableEntry = new zipHuftNode();
-    zipHuftBuild.prototype.tail = null;
-    function zipHuftBuild(codeLength, codes, simpleCodes, baseValues, extraBits, maximumLookup) {
+  HuftBuild = (function() {
+    HuftBuild.prototype.constants = {
+      copyLengths: [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 0, 0],
+      distanceCodeCopyOffsets: [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577],
+      distanceCodeExtraBits: [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13],
+      extraBits: [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 99, 99]
+    };
+    HuftBuild.prototype.BMAX = 16;
+    HuftBuild.prototype.m = 0;
+    HuftBuild.prototype.N_MAX = 288;
+    HuftBuild.prototype.root = null;
+    HuftBuild.prototype.status = 0;
+    HuftBuild.prototype.baseValues = null;
+    HuftBuild.prototype.extraBits = null;
+    HuftBuild.prototype.tableEntry = new HuftNode();
+    HuftBuild.prototype.tail = null;
+    function HuftBuild(codeLength, codes, simpleCodes, distanceOrLiteral, maximumLookup) {
       this.codeLength = codeLength;
       this.codes = codes;
       this.simpleCodes = simpleCodes;
-      this.baseValues = baseValues;
-      this.extraBits = extraBits;
+      this.distanceOrLiteral = distanceOrLiteral;
       this.maximumLookup = maximumLookup;
       this.init();
     }
-    zipHuftBuild.prototype.init = function() {
+    HuftBuild.prototype.init = function() {
       var bMaxRange, bitOffsetPointer, codesCounter, counter, currentCodeBits, currentCodeCounter, currentCodePeriod, currentTable, currentTableEntries, dummyCodes, maxCodeLen, n, tableLevel, _ref, _ref2, _ref3, _ref4, _ref5;
+      if (this.distanceOrLiteral === "distance") {
+        this.baseValues = this.constants.distanceCodeCopyOffsets;
+        this.extraBits = this.constants.distanceCodeExtraBits;
+      } else if (this.distanceOrLiteral === "literal") {
+        this.baseValues = this.constants.copyLengths;
+        this.extraBits = this.constants.extraBits;
+      }
       this.tail = null;
       this.bitLengthCounts = (function() {
         var _i, _j, _len, _ref, _ref2, _results, _results2;
@@ -652,14 +775,14 @@
               var _results;
               _results = [];
               for (n = 0; (0 <= currentTableEntries ? n < currentTableEntries : n > currentTableEntries); (0 <= currentTableEntries ? n += 1 : n -= 1)) {
-                _results.push(new zipHuftNode());
+                _results.push(new HuftNode());
               }
               return _results;
             })();
             if (this.tail === null) {
-              this.tail = this.root = new zipHuftList();
+              this.tail = this.root = new HuftList();
             } else {
-              this.tail = this.tail.next = new zipHuftList();
+              this.tail = this.tail.next = new HuftList();
             }
             this.tail.next = null;
             this.tail.list = currentTable;
@@ -711,135 +834,6 @@
       this.m = this.bitStack[1];
       return this.status = dummyCodes !== 0 && maxCodeLen !== 1 ? 1 : 0;
     };
-    return zipHuftBuild;
-  })();
-  ZipError = (function() {
-    function ZipError(error) {
-      throw new Error(error);
-    }
-    return ZipError;
-  })();
-  ZipFileMember = (function() {
-    function ZipFileMember(zip, start) {
-      this.zip = zip;
-      this.start = start;
-    }
-    ZipFileMember.prototype.bytesAsNumber = function(bytes) {
-      var byte, number, _i, _len, _ref;
-      number = 0;
-      _ref = Array.prototype.slice.call(bytes).reverse();
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        byte = _ref[_i];
-        number = (number << 8) + byte;
-      }
-      return number;
-    };
-    ZipFileMember.prototype.bytesAsUTF8String = function(bytes) {
-      var byte;
-      return decodeURIComponent(((function() {
-        var _i, _len, _results;
-        _results = [];
-        for (_i = 0, _len = bytes.length; _i < _len; _i++) {
-          byte = bytes[_i];
-          _results.push("%" + (byte.toString(16)));
-        }
-        return _results;
-      })()).join(""));
-    };
-    ZipFileMember.prototype.bytesAsString = function(bytes) {
-      var byte;
-      return ((function() {
-        var _i, _len, _results;
-        _results = [];
-        for (_i = 0, _len = bytes.length; _i < _len; _i++) {
-          byte = bytes[_i];
-          _results.push(String.fromCharCode(byte));
-        }
-        return _results;
-      })()).join("");
-    };
-    ZipFileMember.prototype.file = "";
-    ZipFileMember.prototype.inflatedBytes = function(bytes) {
-      return new CSInflate(bytes, true).inflate();
-    };
-    ZipFileMember.prototype.inflatedBytesAsString = function(bytes) {
-      return new CSInflate(bytes).inflate();
-    };
-    ZipFileMember.prototype.process = function() {
-      var extraFieldStart, fileNameStart, key, value, _ref;
-      _ref = this.header;
-      for (key in _ref) {
-        value = _ref[key];
-        this[key] = this.bytesAsNumber(value);
-      }
-      delete this.header;
-      this.isEncrypted = (this.bitFlag & 0x01) === 0x01;
-      this.isUTF8 = (this.bitFlag & 0x0800) === 0x0800;
-      this.usesTrailingDescriptor = (this.bitFlag & 0x0008) === 0x0008;
-      this.filename = this.bytesAsString(new Uint8Array(this.zip.arrayBuffer, (fileNameStart = this.start + 26), this.fileNameLength));
-      this.extraField = this.bytesAsString(new Uint8Array(this.zip.arrayBuffer, (extraFieldStart = fileNameStart + this.fileNameLength), this.extraFieldLength));
-      this.fileStart = extraFieldStart + this.extraFieldLength;
-      return this.readFile();
-    };
-    ZipFileMember.prototype.readFile = function() {
-      var bytes, extension, filenameParts;
-      if (this.usesTrailingDescriptor) {
-        this.findCompressedSize();
-      }
-      bytes = new Uint8Array(this.zip.arrayBuffer, this.fileStart, this.compressedSize);
-      extension = (filenameParts = this.filename.split("."))[filenameParts.length - 1];
-      if (__indexOf.call(this.zip.constants.binaryFileExtensions, extension) >= 0) {
-        this.file = this.inflatedBytes(bytes);
-        this.type = "binary";
-      } else {
-        if (this.compressedSize > 0) {
-          this.file = (this.uncompressedSize === this.compressedSize ? this.bytesAsString : this.inflatedBytesAsString)(bytes);
-        } else {
-          this.type = "folder";
-        }
-      }
-      return this.end = this.fileStart + this.compressedSize;
-    };
-    ZipFileMember.prototype.readHeader = function() {
-      return this.header = {
-        minimumVersion: new Uint8Array(this.zip.arrayBuffer, this.start, 2),
-        bitFlag: new Uint8Array(this.zip.arrayBuffer, this.start + 2, 2),
-        compressionMethod: new Uint8Array(this.zip.arrayBuffer, this.start + 4, 2),
-        modificationTime: new Uint8Array(this.zip.arrayBuffer, this.start + 6, 2),
-        modificationDate: new Uint8Array(this.zip.arrayBuffer, this.start + 8, 2),
-        crc32: new Uint8Array(this.zip.arrayBuffer, this.start + 10, 2),
-        compressedSize: new Uint8Array(this.zip.arrayBuffer, this.start + 14, 4),
-        uncompressedSize: new Uint8Array(this.zip.arrayBuffer, this.start + 18, 4),
-        fileNameLength: new Uint8Array(this.zip.arrayBuffer, this.start + 22, 2),
-        extraFieldLength: new Uint8Array(this.zip.arrayBuffer, this.start + 24, 2)
-      };
-    };
-    ZipFileMember.prototype.findCompressedSize = function() {
-      var byte, position, possibleEOFBytes, _results;
-      position = this.fileStart;
-      _results = [];
-      while (true) {
-        try {
-          byte = new Uint8Array(this.zip.arrayBuffer, position, 1)[0];
-        } catch (e) {
-          break;
-        }
-        if (byte === 80) {
-          possibleEOFBytes = new Uint8Array(this.zip.arrayBuffer, position, 4);
-          if (this.bytesAsString(possibleEOFBytes) === this.zip.constants.trailingEOFSignature) {
-            this.compressedSize = position - this.fileStart;
-            break;
-          }
-        }
-        _results.push(position += 1);
-      }
-      return _results;
-    };
-    ZipFileMember.prototype.read = function() {
-      this.readHeader();
-      return this.process();
-    };
-    ZipFileMember.prototype.type = "text";
-    return ZipFileMember;
+    return HuftBuild;
   })();
 }).call(this);
