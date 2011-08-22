@@ -11,14 +11,26 @@
     filePreview = $("#file-preview");
     wrapper = $("#wrapper");
     previewFile = function(file, listItem) {
+      var extension, filenameParts;
       fileList.children("li").removeClass("current-file");
       listItem.addClass("current-file");
+      extension = (filenameParts = file.filename.split("."))[filenameParts.length - 1];
       if (file.type === "binary") {
-        return filePreview.html($("<img />", {
-          src: "data:image/png;base64," + Crypto.util.bytesToBase64(file.file)
-        }));
+        if (extension === "png" || extension === "jpg" || extension === "jpeg" || extension === "gif" || extension === "bmp") {
+          return filePreview.html($("<img />", {
+            src: ("data:image/" + extension + ";base64,") + Crypto.util.bytesToBase64(file.file)
+          }));
+        } else {
+          return filePreview.html("<i>Binary file</i>.");
+        }
       } else {
-        return filePreview.text(file.file);
+        if (extension === "html" || extension === "htm" || extension === "xhtml" || extension === "xml" || extension === "opf") {
+          return filePreview.html($("<iframe />", {
+            src: "data:text/html;charset=utf-8;base64," + Crypto.util.bytesToBase64(Crypto.charenc.UTF8.stringToBytes(file.file))
+          }));
+        } else {
+          return filePreview.text(file.file);
+        }
       }
     };
     addFile = function(file) {
@@ -37,17 +49,19 @@
       return fileList.html("");
     };
     loadZip = function() {
-      var reader;
+      var filePathParts, filename, reader;
       reader = new FileReader();
       reader.onload = function(evt) {
         var archive, arrayBuffer;
         fileBrowser.show();
         wrapper.removeClass("no-file");
+        $("title").text();
         arrayBuffer = evt.target.result;
         archive = new CoffeeZip(arrayBuffer, addFile);
         archive.extract();
         return fileList.children().first().click();
       };
+      filename = (filePathParts = zipFileInput.attr("value").split("/"))[filePathParts.length - 1];
       return reader.readAsArrayBuffer(zipFileInput[0].files[0]);
     };
     return zipFileInput.change(function() {
