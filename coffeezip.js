@@ -458,7 +458,6 @@
       n = 0;
       while (n < size) {
         if (this.endOfFile && this.method === -1) {
-          console.log(n, size);
           return n;
         }
         if (this.copyLength > 0) {
