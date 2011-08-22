@@ -1,10 +1,18 @@
 html, body {
-	background: #FEFBF2;
+	background: #FFF;
 	font-size: 16px;
 	overflow: hidden;
 }
 
+h1 {
+	text-shadow: 2px 2px 1px #444;
+}
+h2 {
+	text-shadow: 1px 1px 1px #444;
+}
+
 #wrapper {
+	background-image: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0) 80%, rgba(0, 0, 0, 0.25));
 	bottom: 0;
 	position: fixed;
 	left: 0;
@@ -20,7 +28,7 @@ html, body {
 		text-align: center;
 	}
 	#wrapper #file-input {
-		background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.5));
+		background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.75));
 		height: 2em;
 		padding-left: 1em;
 		padding-top: 0.75em;
@@ -35,6 +43,7 @@ html, body {
 		border: 2px rgba(0, 0, 0, 0.5) solid;
 		border-radius: 0.75em;
 		
+		padding: 0;
 		position: fixed;
 		
 		bottom: 26%;
@@ -49,16 +58,17 @@ html, body {
 	#wrapper.no-file #file-input:hover {
 		opacity: 1;
 	}
+		#wrapper.no-file #file-input form {
+			height: 100%;
+		}
 		#wrapper.no-file #file-input form input[type="file"] {
 			background-image: url("upload.png");
 			background-position: center;
 			background-repeat: no-repeat;
-			background-size: 90%;
+			background-size: 80%;
 			color: rgba(0, 0, 0, 0);
-			max-height: 100%;
-			padding-top: 100%;
+			height: 100%;
 			text-align: center;
-			width: 100%;
 		}
 		#wrapper.no-file #file-input.file-loading form input[type="file"] {
 			background-image: url("loading.png");
@@ -72,40 +82,63 @@ html, body {
 		bottom: 0;
 	}
 		#wrapper #file-browser h2 {
-			background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.5));
+			background-image: -webkit-linear-gradient(top, black, rgba(0, 0, 0, 0.75));
+			border-bottom: 1px #000 solid;
 			color: #FFF;
-			line-height: 2em;
+			line-height: 1.75em;
+			margin-bottom: 0;
 			padding-left: 1em;
 		}
 		#wrapper #file-browser #file-list-panel {
 			position: fixed;
-			top: 2em;
+			top: 1.5em;
 			left: 0;
 			bottom: 0;
+			overflow-x: hidden;
 			overflow-y: scroll;
 			width: 20em;
 		}
 			#wrapper #file-browser #file-list-panel #file-list {
 				border-right: 1px #000 solid;
 				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			#wrapper #file-browser #file-list-panel h2 {
+				border-right: 1px #000 solid;
 			}
 				#wrapper #file-browser #file-list-panel #file-list li {
-					margin-bottom: 0.5em;
+					height: 2.5em;
+					line-height: 2.5em;
+					padding-left: 1em;
+					width: 100%;
 				}
-				#wrapper #file-browser #file-list-panel #file-list li.current-file {
+				#wrapper #file-browser #file-list-panel #file-list li:nth-child(2n) {
+					background-image: -webkit-linear-gradient(top, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.1));
+				}
+				#wrapper #file-browser #file-list-panel #file-list li.current-file,
+				#wrapper #file-browser #file-list-panel #file-list li:hover {
 					font-weight: bold;
 					text-decoration: underline;
 				}
 		#wrapper #file-browser #file-preview-panel {
 			position: fixed;
 			left: 20em;
-			top: 2em;
+			top: 1.5em;
 			right: 0;
 		}
 			#wrapper #file-browser #file-preview-panel #file-preview {
+				height: 90%;
 				overflow-y: scroll;
 				padding: 2em;
 			}
+				#wrapper #file-browser #file-preview-panel #file-preview iframe {
+					height: 80%;
+					width: 100%;
+				}
+				#wrapper #file-browser #file-preview-panel #file-preview iframe, #wrapper #file-browser #file-preview-panel #file-preview img {
+					background: #FFF;
+				}
 		
 	#wrapper.no-file #file-browser {
 		display: none;
