@@ -562,16 +562,13 @@
       }
     };
     CSInflate.prototype.needBits = function(n) {
-      var x;
-      x = 0;
+      var _results;
+      _results = [];
       while (this.bitLength < n) {
-        x++;
         this.bitBuffer |= this.getByte() << this.bitLength;
-        this.bitLength += 8;
+        _results.push(this.bitLength += 8);
       }
-      if (x > 1) {
-        return alert(x);
-      }
+      return _results;
     };
     CSInflate.prototype.getBits = function(n) {
       this.needBits(n);
